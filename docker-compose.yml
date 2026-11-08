@@ -1,0 +1,116 @@
+
+services:
+  # ================================================
+  # NestJS Application
+  # ================================================
+  app:
+    build:
+      context: .
+      target: development
+
+    container_name: dtp-app
+
+    restart: unless-stopped
+
+    command: >
+      sh -c "bun install --frozen-lockfile &&
+             bun run start:dev"
+
+    ports:
+      - "3000:3000"
+
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+
+      # PostgreSQL
+      DATABASE_URL: postgresql://dtp_user:dtp_password@postgres:5432/distributed_transaction_processing
+
+      # AWS SDK / MiniStack
+      AWS_REGION: us-east-1
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      SQS_ENDPOINT: http://ministack:4566
+
+    volumes:
+      - .:/app
+      - app_node_modules:/app/node_modules
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+      ministack:
+        condition: service_healthy
+
+  # ================================================
+  # PostgreSQL
+  # ================================================
+  postgres:
+    image: postgres:17-alpine
+
+    container_name: dtp-postgres
+
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: distributed_transaction_processing
+      POSTGRES_USER: dtp_user
+      POSTGRES_PASSWORD: dtp_password
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U dtp_user -d distributed_transaction_processing
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ================================================
+  # MiniStack - AWS Emulator
+  # ================================================
+  ministack:
+    image: ministackorg/ministack:latest
+
+    container_name: dtp-ministack
+
+    restart: unless-stopped
+
+    ports:
+      - "4566:4566"
+
+    environment:
+      GATEWAY_PORT: 4566
+      MINISTACK_REGION: us-east-1
+      LOG_LEVEL: INFO
+      PERSIST_STATE: "1"
+      STATE_DIR: /data/ministack-state
+
+    volumes:
+      - ministack_data:/data
+
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:4566/_ministack/health')"
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+# ================================================
+# Docker Volumes
+# ================================================
+volumes:
+  app_node_modules:
+  postgres_data:
+  ministack_data:
