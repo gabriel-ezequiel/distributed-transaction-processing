@@ -116,6 +116,8 @@ export interface WagerTransactionStore {
   findWalletForUpdate(walletId: string): Promise<Wallet | undefined>;
   /** Persists a new or changed wager transaction. */
   saveTransaction(record: WagerTransactionRecord): Promise<void>;
+  /** Persists the changed wallet aggregate after a financial movement. */
+  saveWallet(wallet: Wallet): Promise<void>;
   /** Persists an immutable ledger entry. */
   saveLedgerEntry(entry: WalletLedgerEntry): Promise<void>;
   /** Persists a serialized integration event in the same transaction. */
@@ -473,6 +475,7 @@ export class ProcessWagerTransaction {
       );
       await store.saveLedgerEntry(entry);
     }
+    await store.saveWallet(wallet);
     await store.saveTransaction({ transaction, result });
     await this.saveEvents(store, events);
     return result;
@@ -547,6 +550,9 @@ export class ProcessWagerTransaction {
       command.consumerName,
       command.messageId,
     );
+    if (existing && existing.payloadHash !== command.payloadHash) {
+      throw new IdempotencyConflictError();
+    }
     if (existing?.isProcessed()) {
       const transaction = await store.findByIdempotencyKey(
         command.providerId,

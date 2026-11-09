@@ -75,6 +75,25 @@ export const WagerTransactionEntity = defineEntity({
       .fieldName('processed_at')
       .nullable()
       .check(`"status" <> 'PROCESSED' or "processed_at" is not null`),
+    /** Balance returned when the transaction was first processed. */
+    resultBalanceAmount: p
+      .decimal('string')
+      .fieldName('result_balance_amount')
+      .precision(20)
+      .scale(2)
+      .nullable(),
+    /** Currency of the original response balance snapshot. */
+    resultBalanceCurrency: p
+      .string()
+      .length(3)
+      .fieldName('result_balance_currency')
+      .nullable(),
+    /** Wallet version observed in the original response. */
+    resultWalletVersion: p
+      .integer()
+      .fieldName('result_wallet_version')
+      .nullable()
+      .check('"result_wallet_version" is null or "result_wallet_version" >= 1'),
   },
   uniques: [
     {

@@ -71,6 +71,8 @@ class InMemoryWagerStore implements WagerTransactionStore {
     this.transactions.push(record);
   }
 
+  async saveWallet(_wallet: Wallet): Promise<void> {}
+
   async saveLedgerEntry(entry: WalletLedgerEntry): Promise<void> {
     this.ledger.push(entry);
   }

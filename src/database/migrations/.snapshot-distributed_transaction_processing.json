@@ -596,6 +596,57 @@
           "enumItems": [],
           "mappedType": "text"
         },
+        "result_balance_amount": {
+          "name": "result_balance_amount",
+          "type": "numeric(20,2)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": 20,
+          "scale": 2,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "decimal"
+        },
+        "result_balance_currency": {
+          "name": "result_balance_currency",
+          "type": "varchar(3)",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": 3,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "string"
+        },
+        "result_wallet_version": {
+          "name": "result_wallet_version",
+          "type": "int",
+          "unsigned": false,
+          "autoincrement": false,
+          "primary": false,
+          "nullable": true,
+          "unique": false,
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "default": null,
+          "comment": null,
+          "collation": null,
+          "enumItems": [],
+          "mappedType": "integer"
+        },
         "round_id": {
           "name": "round_id",
           "type": "text",
@@ -728,6 +779,12 @@
           "expression": "\"kind\" not in ('REFUND', 'ROLLBACK') or \"reference_external_transaction_id\" is not null",
           "definition": "check (\"kind\" not in ('REFUND', 'ROLLBACK') or \"reference_external_transaction_id\" is not null)",
           "columnName": "reference_external_transaction_id"
+        },
+        {
+          "name": "wager_transactions_result_wallet_version_check",
+          "expression": "\"result_wallet_version\" is null or \"result_wallet_version\" >= 1",
+          "definition": "check (\"result_wallet_version\" is null or \"result_wallet_version\" >= 1)",
+          "columnName": "result_wallet_version"
         },
         {
           "name": "wager_transactions_status_check",
