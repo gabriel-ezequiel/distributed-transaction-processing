@@ -65,7 +65,7 @@ export class InboxMessage {
     return this._processedAt !== undefined;
   }
 
-  /** Marks the message processed after the surrounding transaction commits. */
+  /** Marks the message processed within the surrounding atomic transaction. */
   markProcessed(at: Date): void {
     if (this.isProcessed()) {
       throw new InvalidInboxMessageError('Inbox message is already processed');
