@@ -10,8 +10,8 @@ if (!databaseUrl) {
 export default defineConfig({
   clientUrl: databaseUrl,
 
-  entities: [],
-  entitiesTs: [],
+  entities: ['./dist/infrastructure/persistence/entities/**/*.entity.js'],
+  entitiesTs: ['./src/infrastructure/persistence/entities/**/*.entity.ts'],
 
   debug: process.env.NODE_ENV !== 'production',
 
