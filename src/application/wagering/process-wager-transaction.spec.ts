@@ -27,6 +27,18 @@ class InMemoryWagerStore implements WagerTransactionStore {
 
   constructor(private readonly wallet: Wallet) {}
 
+  async findDuePendingReferenceIds(
+    _limit: number,
+    _now: Date,
+  ): Promise<string[]> {
+    return this.transactions
+      .filter(
+        ({ transaction }) =>
+          transaction.status === WagerTransactionStatus.PendingReference,
+      )
+      .map(({ transaction }) => transaction.id);
+  }
+
   async findByIdempotencyKey(
     providerId: string,
     idempotencyKey: string,
@@ -36,6 +48,16 @@ class InMemoryWagerStore implements WagerTransactionStore {
         transaction.providerId === providerId &&
         transaction.idempotencyKey === idempotencyKey,
     );
+  }
+
+  async findPendingReference(
+    transactionId: string,
+  ): Promise<WagerTransaction | undefined> {
+    return this.transactions.find(
+      ({ transaction }) =>
+        transaction.id === transactionId &&
+        transaction.status === WagerTransactionStatus.PendingReference,
+    )?.transaction;
   }
 
   async findByProviderExternal(

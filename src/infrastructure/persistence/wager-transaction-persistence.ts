@@ -69,6 +69,8 @@ export function mapWagerTransactionToDomain(
     referenceTransactionId: row.referenceTransactionId ?? undefined,
     failureCode: row.failureCode ? (row.failureCode as FailureCode) : undefined,
     processedAt: row.processedAt ?? undefined,
+    referenceAttempts: row.referenceAttempts,
+    nextReferenceAttemptAt: row.nextReferenceAttemptAt ?? undefined,
   };
   return WagerTransaction.rehydrate(state);
 }
@@ -135,6 +137,24 @@ export class MikroOrmWagerTransactionStore implements WagerTransactionStore {
 
   constructor(private readonly entityManager: EntityManager) {}
 
+  async findDuePendingReferenceIds(
+    limit: number,
+    now: Date,
+  ): Promise<string[]> {
+    const rows = await this.entityManager.find(
+      WagerTransactionEntity,
+      {
+        status: WagerTransactionStatus.PendingReference,
+        $or: [
+          { nextReferenceAttemptAt: null },
+          { nextReferenceAttemptAt: { $lte: now } },
+        ],
+      },
+      { fields: ['id'], limit, orderBy: { createdAt: 'asc' } },
+    );
+    return rows.map((row) => row.id);
+  }
+
   async findByIdempotencyKey(
     providerId: string,
     idempotencyKey: string,
@@ -149,6 +169,17 @@ export class MikroOrmWagerTransactionStore implements WagerTransactionStore {
           result: mapResult(row),
         }
       : undefined;
+  }
+
+  async findPendingReference(
+    transactionId: string,
+  ): Promise<WagerTransaction | undefined> {
+    const row = await this.entityManager.findOne(
+      WagerTransactionEntity,
+      { id: transactionId, status: WagerTransactionStatus.PendingReference },
+      { lockMode: LockMode.PESSIMISTIC_WRITE },
+    );
+    return row ? mapWagerTransactionToDomain(row) : undefined;
   }
 
   async findByProviderExternal(
@@ -227,12 +258,16 @@ export class MikroOrmWagerTransactionStore implements WagerTransactionStore {
         failureCode: transaction.failureCode ?? null,
         createdAt: transaction.createdAt,
         processedAt: transaction.processedAt ?? null,
+        referenceAttempts: transaction.referenceAttempts,
+        nextReferenceAttemptAt: transaction.nextReferenceAttemptAt ?? null,
       });
 
     row.referenceTransactionId = transaction.referenceTransactionId ?? null;
     row.status = transaction.status;
     row.failureCode = transaction.failureCode ?? null;
     row.processedAt = transaction.processedAt ?? null;
+    row.referenceAttempts = transaction.referenceAttempts;
+    row.nextReferenceAttemptAt = transaction.nextReferenceAttemptAt ?? null;
     applyResult(row, record.result);
     this.entityManager.persist(row);
   }

@@ -108,6 +108,10 @@ export interface WagerTransactionState {
   failureCode?: FailureCode;
   /** Timestamp at which the operation was applied. */
   processedAt?: Date;
+  /** Number of attempts made to resolve the external reference. */
+  referenceAttempts?: number;
+  /** Earliest timestamp at which the next reference retry may run. */
+  nextReferenceAttemptAt?: Date;
 }
 
 export class InvalidTransactionStateError extends Error {
@@ -149,6 +153,8 @@ export class WagerTransaction {
     private _referenceTransactionId?: string,
     private _failureCode?: FailureCode,
     private _processedAt?: Date,
+    private _referenceAttempts = 0,
+    private _nextReferenceAttemptAt?: Date,
   ) {}
 
   /**
@@ -205,6 +211,10 @@ export class WagerTransaction {
       state.referenceTransactionId,
       state.failureCode,
       state.processedAt ? new Date(state.processedAt) : undefined,
+      state.referenceAttempts ?? 0,
+      state.nextReferenceAttemptAt
+        ? new Date(state.nextReferenceAttemptAt)
+        : undefined,
     );
   }
 
@@ -226,6 +236,16 @@ export class WagerTransaction {
   /** Returns the processing timestamp, when the transaction was processed. */
   get processedAt(): Date | undefined {
     return this._processedAt ? new Date(this._processedAt) : undefined;
+  }
+
+  get referenceAttempts(): number {
+    return this._referenceAttempts;
+  }
+
+  get nextReferenceAttemptAt(): Date | undefined {
+    return this._nextReferenceAttemptAt
+      ? new Date(this._nextReferenceAttemptAt)
+      : undefined;
   }
 
   /**
@@ -251,10 +271,11 @@ export class WagerTransaction {
     this._referenceTransactionId = referenceTransactionId;
     this._processedAt = new Date(at);
     this._failureCode = undefined;
+    this._nextReferenceAttemptAt = undefined;
   }
 
   /** Marks a reference-dependent transaction as waiting for its reference. */
-  markPendingReference(): void {
+  markPendingReference(nextAttemptAt = new Date()): void {
     this.assertMutable();
 
     if (!this.requiresReference()) {
@@ -264,6 +285,8 @@ export class WagerTransaction {
     }
 
     this._status = WagerTransactionStatus.PendingReference;
+    this._referenceAttempts += 1;
+    this._nextReferenceAttemptAt = new Date(nextAttemptAt);
   }
 
   /** Rejects the transaction for a terminal business-rule failure. */

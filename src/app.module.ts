@@ -17,6 +17,7 @@ import {
 import { SqsWagerLifecycle } from './infrastructure/messaging/sqs-wager-lifecycle.js';
 import { HealthController } from './health/health.controller.js';
 import { HealthService } from './health/health.service.js';
+import { PendingReferenceWorker } from './application/wagering/pending-reference-worker.js';
 
 @Module({
   imports: [MikroOrmModule.forRoot(mikroOrmConfig)],
@@ -24,6 +25,7 @@ import { HealthService } from './health/health.service.js';
   providers: [
     AppService,
     HealthService,
+    PendingReferenceWorker,
     MikroOrmWagerTransactionUnitOfWork,
     {
       provide: ProcessWagerTransaction,

@@ -75,6 +75,15 @@ export const WagerTransactionEntity = defineEntity({
       .fieldName('processed_at')
       .nullable()
       .check(`"status" <> 'PROCESSED' or "processed_at" is not null`),
+    referenceAttempts: p
+      .integer()
+      .fieldName('reference_attempts')
+      .default(0)
+      .check('"reference_attempts" >= 0'),
+    nextReferenceAttemptAt: p
+      .datetime()
+      .fieldName('next_reference_attempt_at')
+      .nullable(),
     /** Balance returned when the transaction was first processed. */
     resultBalanceAmount: p
       .decimal('string')
@@ -112,6 +121,10 @@ export const WagerTransactionEntity = defineEntity({
       /** Speeds up workers searching wallet transactions by processing state. */
       name: 'wager_transactions_wallet_status_idx',
       properties: ['wallet', 'status'],
+    },
+    {
+      name: 'wager_transactions_reference_retry_idx',
+      properties: ['status', 'nextReferenceAttemptAt'],
     },
   ],
 });

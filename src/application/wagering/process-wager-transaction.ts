@@ -96,6 +96,12 @@ export interface WagerTransactionRecord {
  * writes made through this port atomically.
  */
 export interface WagerTransactionStore {
+  /** Lists due pending-reference transactions for retry scheduling. */
+  findDuePendingReferenceIds(limit: number, now: Date): Promise<string[]>;
+  /** Finds a pending reference transaction and locks its wallet. */
+  findPendingReference(
+    transactionId: string,
+  ): Promise<WagerTransaction | undefined>;
   /** Finds an existing transaction by its durable idempotency key. */
   findByIdempotencyKey(
     providerId: string,
@@ -277,6 +283,48 @@ export class ProcessWagerTransaction {
     });
   }
 
+  async retryPendingReference(
+    transactionId: string,
+    maxAttempts: number,
+    now = new Date(),
+  ): Promise<ProcessWagerTransactionResult | undefined> {
+    return this.unitOfWork.transactional(async (store) => {
+      const transaction = await store.findPendingReference(transactionId);
+      if (!transaction || transaction.status !== WagerTransactionStatus.PendingReference) {
+        return undefined;
+      }
+      if (transaction.nextReferenceAttemptAt && transaction.nextReferenceAttemptAt > now) {
+        return undefined;
+      }
+      const wallet = await store.findWalletForUpdate(transaction.walletId);
+      if (!wallet) {
+        transaction.fail(FailureCode.InfrastructureFailure);
+        const result = ProcessWagerTransaction.resultFrom(transaction);
+        await store.saveTransaction({ transaction, result });
+        return result;
+      }
+      const command = ProcessWagerTransaction.commandFrom(transaction);
+      if (transaction.referenceAttempts >= maxAttempts) {
+        return this.rejectNewTransaction(
+          store,
+          command,
+          transaction.money,
+          now,
+          FailureCode.ReferenceNotFound,
+          transaction,
+          wallet,
+        );
+      }
+      return this.processReferenceTransaction(
+        store,
+        transaction,
+        wallet,
+        command,
+        now,
+      );
+    });
+  }
+
   private async processDirectTransaction(
     store: WagerTransactionStore,
     transaction: WagerTransaction,
@@ -350,7 +398,12 @@ export class ProcessWagerTransaction {
       ? await store.findByProviderExternal(command.providerId, referenceId)
       : undefined;
     if (!reference) {
-      transaction.markPendingReference();
+      transaction.markPendingReference(
+        ProcessWagerTransaction.nextReferenceAttemptAt(
+          transaction.referenceAttempts + 1,
+          occurredAt,
+        ),
+      );
       return this.persistWithEvent(
         store,
         transaction,
@@ -593,6 +646,34 @@ export class ProcessWagerTransaction {
         : {}),
       idempotentReplay: false,
     };
+  }
+
+  private static commandFrom(
+    transaction: WagerTransaction,
+  ): ProcessWagerTransactionCommand {
+    return {
+      providerId: transaction.providerId,
+      externalTransactionId: transaction.externalTransactionId,
+      idempotencyKey: transaction.idempotencyKey,
+      payloadHash: transaction.payloadHash,
+      walletId: transaction.walletId,
+      playerId: transaction.playerId,
+      roundId: transaction.roundId,
+      gameId: transaction.gameId,
+      kind: transaction.kind as Exclude<
+        WagerTransactionKind,
+        WagerTransactionKind.Opening
+      >,
+      money: transaction.money.toJSON(),
+      referenceExternalTransactionId:
+        transaction.referenceExternalTransactionId,
+      correlationId: `pending-reference:${transaction.id}`,
+    };
+  }
+
+  private static nextReferenceAttemptAt(attempt: number, now: Date): Date {
+    const delaySeconds = Math.min(300, 2 ** Math.max(0, attempt - 1));
+    return new Date(now.getTime() + delaySeconds * 1000);
   }
 
   private static assertCommand(
