@@ -21,6 +21,12 @@ import { PendingReferenceWorker } from './application/wagering/pending-reference
 import { WalletReconciliationController } from './application/reconciliation/wallet-reconciliation.controller.js';
 import { WalletReconciliationService } from './application/reconciliation/wallet-reconciliation.service.js';
 import { ApplicationMetrics } from './observability/application-metrics.js';
+import {
+  OutboxPublisherLifecycle,
+  SqsOutboxEventPublisher,
+} from './infrastructure/messaging/sqs-outbox-publisher.js';
+import { OutboxPublisher } from './application/messaging/outbox-publisher.js';
+import { MikroOrmOutboxPublisherUnitOfWork } from './infrastructure/persistence/outbox-publisher-persistence.js';
 
 @Module({
   imports: [MikroOrmModule.forRoot(mikroOrmConfig)],
@@ -37,6 +43,29 @@ import { ApplicationMetrics } from './observability/application-metrics.js';
     PendingReferenceWorker,
     WalletReconciliationService,
     MikroOrmWagerTransactionUnitOfWork,
+    MikroOrmOutboxPublisherUnitOfWork,
+    {
+      provide: SqsOutboxEventPublisher,
+      inject: [SQSClient],
+      useFactory: (client: SQSClient) =>
+        new SqsOutboxEventPublisher(
+          client,
+          process.env.OUTBOX_QUEUE_NAME ?? 'wager-events.fifo',
+        ),
+    },
+    {
+      provide: OutboxPublisher,
+      inject: [
+        MikroOrmOutboxPublisherUnitOfWork,
+        SqsOutboxEventPublisher,
+        ApplicationMetrics,
+      ],
+      useFactory: (
+        unitOfWork: MikroOrmOutboxPublisherUnitOfWork,
+        broker: SqsOutboxEventPublisher,
+        metrics: ApplicationMetrics,
+      ) => new OutboxPublisher(unitOfWork, broker, undefined, metrics),
+    },
     {
       provide: ProcessWagerTransaction,
       inject: [MikroOrmWagerTransactionUnitOfWork, ApplicationMetrics],
@@ -109,6 +138,7 @@ import { ApplicationMetrics } from './observability/application-metrics.js';
       ) => new SqsWagerConsumerWorker(queue, transport, consumer),
     },
     SqsWagerLifecycle,
+    OutboxPublisherLifecycle,
   ],
 })
 export class AppModule {}

@@ -1,4 +1,5 @@
 import { InferEntity, LockMode } from '@mikro-orm/core';
+import { Injectable } from '@nestjs/common';
 import { EntityManager } from '@mikro-orm/postgresql';
 import { OutboxMessage } from '../../domain/messaging/outbox-message.js';
 import {
@@ -10,6 +11,7 @@ import { OutboxMessageEntity } from './entities/outbox-message.entity.js';
 type OutboxRow = InferEntity<typeof OutboxMessageEntity>;
 
 /** MikroORM unit of work for concurrent outbox publishers. */
+@Injectable()
 export class MikroOrmOutboxPublisherUnitOfWork implements OutboxPublisherUnitOfWork {
   constructor(private readonly entityManager: EntityManager) {}
 
