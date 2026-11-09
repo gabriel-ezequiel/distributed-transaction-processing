@@ -526,10 +526,12 @@ export class ProcessWagerTransaction {
           eventContext(transaction, command, occurredAt),
         ),
       );
-      await store.saveLedgerEntry(entry);
     }
     await store.saveWallet(wallet);
     await store.saveTransaction({ transaction, result });
+    if (entry) {
+      await store.saveLedgerEntry(entry);
+    }
     await this.saveEvents(store, events);
     return result;
   }

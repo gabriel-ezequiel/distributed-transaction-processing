@@ -398,6 +398,8 @@ export class WagerTransaction {
           'kind',
           'status',
           'direction',
+          'referenceAttempts',
+          'nextReferenceAttemptAt',
         ].includes(field)
       ) {
         continue;
