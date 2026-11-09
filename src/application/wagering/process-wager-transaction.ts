@@ -230,9 +230,12 @@ export class ProcessWagerTransaction {
         }
       }
 
+      const lockStartedAt = performance.now();
       const wallet = await store.findWalletForUpdate(command.walletId);
       if (wallet) {
-        this.metrics?.recordWalletLockAcquisition();
+        this.metrics?.recordWalletLockAcquisition(
+          performance.now() - lockStartedAt,
+        );
       }
       if (!wallet) {
         throw new WagerTransactionNotFoundError(
@@ -307,9 +310,12 @@ export class ProcessWagerTransaction {
       ) {
         return undefined;
       }
+      const lockStartedAt = performance.now();
       const wallet = await store.findWalletForUpdate(transaction.walletId);
       if (wallet) {
-        this.metrics?.recordWalletLockAcquisition();
+        this.metrics?.recordWalletLockAcquisition(
+          performance.now() - lockStartedAt,
+        );
       }
       if (!wallet) {
         transaction.fail(FailureCode.InfrastructureFailure);

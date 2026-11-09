@@ -16,6 +16,8 @@ export interface ApplicationMetricsSnapshot {
   };
   persistence: {
     walletLockAcquisitions: number;
+    walletLockContentions: number;
+    walletLockWaitMs: { count: number; total: number };
     outboxPublished: number;
     outboxRetries: number;
     outboxLagMs: { count: number; total: number };
@@ -33,12 +35,14 @@ export class ApplicationMetrics {
     deadLetters: 0,
     acknowledgements: 0,
     walletLockAcquisitions: 0,
+    walletLockContentions: 0,
     outboxPublished: 0,
     outboxRetries: 0,
   };
 
   private transactionLatency = { count: 0, total: 0 };
   private outboxLag = { count: 0, total: 0 };
+  private walletLockWait = { count: 0, total: 0 };
 
   recordTransaction(
     status: WagerTransactionStatus,
@@ -69,8 +73,14 @@ export class ApplicationMetrics {
     this.counters.deadLetters += 1;
   }
 
-  recordWalletLockAcquisition(): void {
+  recordWalletLockAcquisition(waitMs: number): void {
     this.counters.walletLockAcquisitions += 1;
+    const normalizedWaitMs = Math.max(0, waitMs);
+    this.walletLockWait.count += 1;
+    this.walletLockWait.total += normalizedWaitMs;
+    if (normalizedWaitMs >= 1) {
+      this.counters.walletLockContentions += 1;
+    }
   }
 
   recordOutboxPublished(lagMs: number): void {
@@ -99,6 +109,8 @@ export class ApplicationMetrics {
       },
       persistence: {
         walletLockAcquisitions: this.counters.walletLockAcquisitions,
+        walletLockContentions: this.counters.walletLockContentions,
+        walletLockWaitMs: { ...this.walletLockWait },
         outboxPublished: this.counters.outboxPublished,
         outboxRetries: this.counters.outboxRetries,
         outboxLagMs: { ...this.outboxLag },

@@ -61,13 +61,14 @@ export class SqsOutboxEventPublisher {
 @Injectable()
 export class OutboxPublisherLifecycle implements OnModuleInit, OnModuleDestroy {
   private timer?: ReturnType<typeof setInterval>;
+  private running = false;
 
   constructor(
     private readonly publisher: OutboxPublisher,
     private readonly broker: SqsOutboxEventPublisher,
   ) {}
 
-  async onModuleInit(): Promise<void> {
+  onModuleInit(): void {
     if (process.env.OUTBOX_PUBLISHER_ENABLED !== 'true') {
       return;
     }
@@ -75,21 +76,34 @@ export class OutboxPublisherLifecycle implements OnModuleInit, OnModuleDestroy {
     if (!Number.isInteger(interval) || interval < 100) {
       throw new Error('OUTBOX_PUBLISHER_INTERVAL_MS must be at least 100');
     }
-    await this.broker.ensureQueue();
     this.timer = setInterval(() => {
-      void this.publisher.publishBatch().catch((error: unknown) => {
-        process.stderr.write(
-          `Outbox publisher failed: ${
-            error instanceof Error ? error.message : String(error)
-          }\n`,
-        );
-      });
+      void this.publishOnce();
     }, interval);
+    void this.publishOnce();
   }
 
   onModuleDestroy(): void {
     if (this.timer) {
       clearInterval(this.timer);
+    }
+  }
+
+  private async publishOnce(): Promise<void> {
+    if (this.running) {
+      return;
+    }
+    this.running = true;
+    try {
+      await this.broker.ensureQueue();
+      await this.publisher.publishBatch();
+    } catch (error: unknown) {
+      process.stderr.write(
+        `Outbox publisher failed: ${
+          error instanceof Error ? error.message : String(error)
+        }\n`,
+      );
+    } finally {
+      this.running = false;
     }
   }
 }
