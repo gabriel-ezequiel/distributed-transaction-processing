@@ -18,14 +18,22 @@ import { SqsWagerLifecycle } from './infrastructure/messaging/sqs-wager-lifecycl
 import { HealthController } from './health/health.controller.js';
 import { HealthService } from './health/health.service.js';
 import { PendingReferenceWorker } from './application/wagering/pending-reference-worker.js';
+import { WalletReconciliationController } from './application/reconciliation/wallet-reconciliation.controller.js';
+import { WalletReconciliationService } from './application/reconciliation/wallet-reconciliation.service.js';
 
 @Module({
   imports: [MikroOrmModule.forRoot(mikroOrmConfig)],
-  controllers: [AppController, WageringController, HealthController],
+  controllers: [
+    AppController,
+    WageringController,
+    HealthController,
+    WalletReconciliationController,
+  ],
   providers: [
     AppService,
     HealthService,
     PendingReferenceWorker,
+    WalletReconciliationService,
     MikroOrmWagerTransactionUnitOfWork,
     {
       provide: ProcessWagerTransaction,
