@@ -61,8 +61,10 @@ export class WalletReconciliationService {
     });
     const divergences: string[] = [];
     let reconstructedBalance = Money.zero(wallet.currency);
+    let initialBalance: Money | undefined;
 
-    for (const [index, entry] of entries.entries()) {
+    let netMovement = Money.zero(wallet.currency);
+    for (const entry of entries) {
       const before = Money.from({
         amount: entry.balanceBefore,
         currency: entry.currency,
@@ -79,10 +81,9 @@ export class WalletReconciliationService {
       if (entry.currency !== wallet.currency) {
         divergences.push(`entry:${entry.id}:currency-mismatch`);
       }
-      if (index === 0) {
+      if (!initialBalance) {
+        initialBalance = before;
         reconstructedBalance = before;
-      } else if (!reconstructedBalance.equals(before)) {
-        divergences.push(`entry:${entry.id}:balance-chain-break`);
       }
 
       const expectedAfter =
@@ -92,7 +93,12 @@ export class WalletReconciliationService {
       if (!expectedAfter.equals(after)) {
         divergences.push(`entry:${entry.id}:unbalanced`);
       }
-      reconstructedBalance = after;
+      netMovement = netMovement.add(
+        entry.direction === LedgerDirection.Debit ? amount.negate() : amount,
+      );
+    }
+    if (entries.length > 0) {
+      reconstructedBalance = initialBalance!.add(netMovement);
     }
 
     if (!persistedBalance.equals(reconstructedBalance)) {

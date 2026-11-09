@@ -13,6 +13,10 @@ describe('Wagering HTTP integration', () => {
   let app: INestApplication;
   let entityManager: EntityManager;
   const walletId = `e2e-wallet-${randomUUID()}`;
+  const distinctWalletIds = [
+    `e2e-distinct-wallet-${randomUUID()}`,
+    `e2e-distinct-wallet-${randomUUID()}`,
+  ];
 
   beforeAll(async () => {
     const module = await Test.createTestingModule({
@@ -28,6 +32,15 @@ describe('Wagering HTTP integration', () => {
       balanceAmount: '100.00',
       version: 1,
     });
+    for (const [index, id] of distinctWalletIds.entries()) {
+      entityManager.create(WalletEntity, {
+        id,
+        playerId: `e2e-distinct-player-${index}`,
+        currency: 'BRL',
+        balanceAmount: '20.00',
+        version: 1,
+      });
+    }
     await entityManager.flush();
   });
 
@@ -48,6 +61,21 @@ describe('Wagering HTTP integration', () => {
     await entityManager
       .getConnection()
       .execute('delete from "wallets" where "id" = ?', [walletId]);
+    for (const id of distinctWalletIds) {
+      await entityManager
+        .getConnection()
+        .execute('delete from "wallet_ledger_entries" where "wallet_id" = ?', [
+          id,
+        ]);
+      await entityManager
+        .getConnection()
+        .execute('delete from "wager_transactions" where "wallet_id" = ?', [
+          id,
+        ]);
+      await entityManager
+        .getConnection()
+        .execute('delete from "wallets" where "id" = ?', [id]);
+    }
     await app.close();
   });
 
@@ -115,5 +143,40 @@ describe('Wagering HTTP integration', () => {
     });
     expect(wallet.balanceAmount).toBe('65.00');
     expect(wallet.version).toBe(7);
+  });
+
+  it('processes distinct wallets in parallel and reconciles their ledgers', async () => {
+    const responses = await Promise.all(
+      distinctWalletIds.flatMap((id, walletIndex) =>
+        Array.from({ length: 5 }, (_, index) =>
+          request(app.getHttpServer())
+            .post('/wagering/transactions')
+            .set('Idempotency-Key', `e2e-wallet-${walletIndex}-${randomUUID()}`)
+            .send({
+              providerId: 'e2e-provider',
+              externalTransactionId: `e2e-wallet-${walletIndex}-${randomUUID()}`,
+              playerId: `e2e-distinct-player-${walletIndex}`,
+              walletId: id,
+              roundId: `e2e-distinct-round-${index}`,
+              gameId: 'e2e-game',
+              kind: 'BET',
+              money: { amount: '2.00', currency: 'BRL' },
+            }),
+        ),
+      ),
+    );
+
+    expect(responses.every((response) => response.status === 201)).toBe(true);
+    for (const id of distinctWalletIds) {
+      const reconciliation = await request(app.getHttpServer())
+        .post(`/wallets/${id}/reconciliation`)
+        .expect(201);
+      expect(reconciliation.body).toMatchObject({
+        walletId: id,
+        consistent: true,
+        entriesChecked: 5,
+        difference: { amount: '0.00', currency: 'BRL' },
+      });
+    }
   });
 });
