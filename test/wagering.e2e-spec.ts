@@ -65,7 +65,7 @@ describe('Wagering HTTP integration', () => {
     const idempotencyKey = `e2e-key-${randomUUID()}`;
 
     const responses = await Promise.all(
-      Array.from({ length: 10 }, () =>
+      Array.from({ length: 50 }, () =>
         request(app.getHttpServer())
           .post('/wagering/transactions')
           .set('Idempotency-Key', idempotencyKey)
