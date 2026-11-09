@@ -20,6 +20,7 @@ import { HealthService } from './health/health.service.js';
 import { PendingReferenceWorker } from './application/wagering/pending-reference-worker.js';
 import { WalletReconciliationController } from './application/reconciliation/wallet-reconciliation.controller.js';
 import { WalletReconciliationService } from './application/reconciliation/wallet-reconciliation.service.js';
+import { ApplicationMetrics } from './observability/application-metrics.js';
 
 @Module({
   imports: [MikroOrmModule.forRoot(mikroOrmConfig)],
@@ -30,6 +31,7 @@ import { WalletReconciliationService } from './application/reconciliation/wallet
     WalletReconciliationController,
   ],
   providers: [
+    ApplicationMetrics,
     AppService,
     HealthService,
     PendingReferenceWorker,
@@ -37,9 +39,11 @@ import { WalletReconciliationService } from './application/reconciliation/wallet
     MikroOrmWagerTransactionUnitOfWork,
     {
       provide: ProcessWagerTransaction,
-      inject: [MikroOrmWagerTransactionUnitOfWork],
-      useFactory: (unitOfWork: MikroOrmWagerTransactionUnitOfWork) =>
-        new ProcessWagerTransaction(unitOfWork),
+      inject: [MikroOrmWagerTransactionUnitOfWork, ApplicationMetrics],
+      useFactory: (
+        unitOfWork: MikroOrmWagerTransactionUnitOfWork,
+        metrics: ApplicationMetrics,
+      ) => new ProcessWagerTransaction(unitOfWork, undefined, metrics),
     },
     {
       provide: SQSClient,
@@ -81,16 +85,18 @@ import { WalletReconciliationService } from './application/reconciliation/wallet
     },
     {
       provide: WagerTransactionConsumer,
-      inject: [ProcessWagerTransaction, SqsWagerTransport],
+      inject: [ProcessWagerTransaction, SqsWagerTransport, ApplicationMetrics],
       useFactory: (
         processWagerTransaction: ProcessWagerTransaction,
         transport: SqsWagerTransport,
+        metrics: ApplicationMetrics,
       ) =>
         new WagerTransactionConsumer(
           processWagerTransaction,
           transport,
           process.env.SQS_CONSUMER_NAME ?? 'wager-consumer',
           Number(process.env.SQS_MAX_RECEIVE_COUNT ?? 5),
+          metrics,
         ),
     },
     {

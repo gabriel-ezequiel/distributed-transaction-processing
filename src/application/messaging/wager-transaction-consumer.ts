@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { InvalidMoneyError } from '../../domain/money/money.js';
 import {
   IdempotencyConflictError,
@@ -6,6 +7,8 @@ import {
   WagerTransactionNotFoundError,
 } from '../wagering/process-wager-transaction.js';
 import { hashCanonicalWagerPayload } from '../wagering/canonical-payload.js';
+import { ApplicationMetrics } from '../../observability/application-metrics.js';
+import { WagerTransactionStatus } from '../../domain/wager-transaction/wager-transaction.js';
 
 /**
  * Transport-neutral representation of an SQS message.
@@ -66,11 +69,14 @@ export interface WagerMessageHandlingResult {
  * completed.
  */
 export class WagerTransactionConsumer {
+  private readonly logger = new Logger(WagerTransactionConsumer.name);
+
   constructor(
     private readonly processWagerTransaction: ProcessWagerTransaction,
     private readonly transport: WagerMessageTransport,
     private readonly consumerName: string,
     private readonly maxAttempts = 5,
+    private readonly metrics?: ApplicationMetrics,
   ) {
     if (!consumerName.trim()) {
       throw new Error('Consumer name must not be empty');
@@ -89,17 +95,50 @@ export class WagerTransactionConsumer {
       const command = this.toCommand(message);
       const result = await this.processWagerTransaction.execute(command);
       await this.transport.ack(message);
+      this.metrics?.recordAcknowledgement();
+      this.metrics?.recordTransaction(
+        result.status as WagerTransactionStatus,
+        result.idempotentReplay,
+        0,
+      );
+      this.logger.log(
+        JSON.stringify({
+          event: 'wager_message_acknowledged',
+          correlationId: command.correlationId,
+          messageId: message.messageId,
+          transactionId: result.transactionId,
+          walletId: command.walletId,
+          providerId: command.providerId,
+          status: result.status,
+          idempotentReplay: result.idempotentReplay,
+        }),
+      );
       return {
         disposition: WagerMessageDisposition.Ack,
         transactionStatus: result.status,
       };
     } catch (error) {
       const disposition = this.classify(error, attempt);
+      this.logger.warn(
+        JSON.stringify({
+          event: 'wager_message_disposition',
+          correlationId: message.data.idempotencyKey,
+          messageId: message.messageId,
+          walletId: message.data.walletId,
+          providerId: message.data.providerId,
+          attempt,
+          disposition,
+          error: error instanceof Error ? error.name : 'UnknownConsumerError',
+        }),
+      );
       if (disposition === WagerMessageDisposition.DeadLetter) {
+        this.metrics?.recordDeadLetter();
         await this.transport.deadLetter(message, this.reason(error));
       } else if (disposition === WagerMessageDisposition.Retry) {
+        this.metrics?.recordRetry();
         await this.transport.retry(message);
       } else {
+        this.metrics?.recordAcknowledgement();
         await this.transport.ack(message);
       }
       return { disposition };

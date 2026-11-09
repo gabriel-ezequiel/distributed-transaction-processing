@@ -1,4 +1,6 @@
+import { Logger } from '@nestjs/common';
 import { OutboxMessage } from '../../domain/messaging/outbox-message.js';
+import { ApplicationMetrics } from '../../observability/application-metrics.js';
 
 /**
  * Minimal broker port. The promise resolves only after the broker confirms
@@ -32,10 +34,13 @@ export interface OutboxPublisherUnitOfWork {
  * can be delivered again; consumers must therefore deduplicate by event ID.
  */
 export class OutboxPublisher {
+  private readonly logger = new Logger(OutboxPublisher.name);
+
   constructor(
     private readonly unitOfWork: OutboxPublisherUnitOfWork,
     private readonly broker: IntegrationEventPublisher,
     private readonly clock: () => Date = () => new Date(),
+    private readonly metrics?: ApplicationMetrics,
   ) {}
 
   /** Publishes one batch and returns the number of successfully confirmed events. */
@@ -55,9 +60,28 @@ export class OutboxPublisher {
           message.markPublished(this.clock());
           await store.save(message);
           published += 1;
+          this.logger.log(
+            JSON.stringify({
+              event: 'outbox_message_published',
+              messageId: message.id,
+              eventType: message.eventType,
+            }),
+          );
+          this.metrics?.recordOutboxPublished(
+            this.clock().getTime() - message.occurredAt.getTime(),
+          );
         } catch (error) {
           message.scheduleRetry(this.clock());
           await store.save(message);
+          this.logger.warn(
+            JSON.stringify({
+              event: 'outbox_message_retry_scheduled',
+              messageId: message.id,
+              eventType: message.eventType,
+              error: error instanceof Error ? error.name : 'UnknownBrokerError',
+            }),
+          );
+          this.metrics?.recordOutboxRetry();
           if (!(error instanceof Error)) {
             throw new Error('Outbox broker failed with a non-Error value');
           }

@@ -1,5 +1,5 @@
 import { ListQueuesCommand, SQSClient } from '@aws-sdk/client-sqs';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { EntityManager } from '@mikro-orm/postgresql';
 
 export interface ReadinessResult {
@@ -13,6 +13,8 @@ export interface ReadinessResult {
 
 @Injectable()
 export class HealthService {
+  private readonly logger = new Logger(HealthService.name);
+
   constructor(
     private readonly entityManager: EntityManager,
     private readonly sqsClient: SQSClient,
@@ -49,6 +51,13 @@ export class HealthService {
     };
     if (Object.keys(errors).length > 0) {
       result.errors = errors;
+      this.logger.warn(
+        JSON.stringify({
+          event: 'readiness_check_failed',
+          checks,
+          failedDependencies: Object.keys(errors),
+        }),
+      );
     }
     return result;
   }

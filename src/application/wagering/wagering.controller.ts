@@ -4,6 +4,7 @@ import {
   Controller,
   Headers,
   HttpCode,
+  Logger,
   NotFoundException,
   Post,
   Body,
@@ -22,6 +23,7 @@ import {
   WagerTransactionStatus,
 } from '../../domain/wager-transaction/wager-transaction.js';
 import { InvalidMoneyError, Money } from '../../domain/money/money.js';
+import { ApplicationMetrics } from '../../observability/application-metrics.js';
 
 /** JSON body accepted by the wagering transaction endpoint. */
 export interface SubmitWagerTransactionBody {
@@ -44,8 +46,11 @@ export interface SubmitWagerTransactionBody {
  */
 @Controller('wagering')
 export class WageringController {
+  private readonly logger = new Logger(WageringController.name);
+
   constructor(
     private readonly processWagerTransaction: ProcessWagerTransaction,
+    private readonly metrics: ApplicationMetrics,
   ) {}
 
   /**
@@ -62,6 +67,7 @@ export class WageringController {
     @Headers('idempotency-key') idempotencyKey?: string,
     @Headers('x-correlation-id') correlationId?: string,
   ) {
+    const startedAt = Date.now();
     if (!idempotencyKey?.trim()) {
       throw new BadRequestException('Idempotency-Key header is required');
     }
@@ -77,6 +83,22 @@ export class WageringController {
 
     try {
       const result = await this.processWagerTransaction.execute(command);
+      this.metrics.recordTransaction(
+        result.status,
+        result.idempotentReplay,
+        Date.now() - startedAt,
+      );
+      this.logger.log(
+        JSON.stringify({
+          event: 'wager_transaction_processed',
+          correlationId: command.correlationId,
+          transactionId: result.transactionId,
+          walletId: command.walletId,
+          providerId: command.providerId,
+          status: result.status,
+          idempotentReplay: result.idempotentReplay,
+        }),
+      );
       if (result.status === WagerTransactionStatus.PendingReference) {
         response.statusCode = 202;
         return {
@@ -89,6 +111,15 @@ export class WageringController {
       }
       return result;
     } catch (error) {
+      this.logger.warn(
+        JSON.stringify({
+          event: 'wager_transaction_failed',
+          correlationId: command.correlationId,
+          walletId: command.walletId,
+          providerId: command.providerId,
+          error: error instanceof Error ? error.name : 'UnknownProcessingError',
+        }),
+      );
       if (error instanceof IdempotencyConflictError) {
         throw new ConflictException(error.message);
       }

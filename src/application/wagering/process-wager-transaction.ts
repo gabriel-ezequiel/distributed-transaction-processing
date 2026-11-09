@@ -21,6 +21,7 @@ import {
   WagerTransactionStatus,
 } from '../../domain/wager-transaction/wager-transaction.js';
 import { Wallet } from '../../domain/wallet/wallet.js';
+import { ApplicationMetrics } from '../../observability/application-metrics.js';
 
 /**
  * Command accepted by both HTTP and message consumers.
@@ -171,6 +172,7 @@ export class ProcessWagerTransaction {
   constructor(
     private readonly unitOfWork: WagerTransactionUnitOfWork,
     private readonly idGenerator: () => string = randomUUID,
+    private readonly metrics?: ApplicationMetrics,
   ) {}
 
   /**
@@ -229,6 +231,9 @@ export class ProcessWagerTransaction {
       }
 
       const wallet = await store.findWalletForUpdate(command.walletId);
+      if (wallet) {
+        this.metrics?.recordWalletLockAcquisition();
+      }
       if (!wallet) {
         throw new WagerTransactionNotFoundError(
           `Wallet not found: ${command.walletId}`,
@@ -290,13 +295,22 @@ export class ProcessWagerTransaction {
   ): Promise<ProcessWagerTransactionResult | undefined> {
     return this.unitOfWork.transactional(async (store) => {
       const transaction = await store.findPendingReference(transactionId);
-      if (!transaction || transaction.status !== WagerTransactionStatus.PendingReference) {
+      if (
+        !transaction ||
+        transaction.status !== WagerTransactionStatus.PendingReference
+      ) {
         return undefined;
       }
-      if (transaction.nextReferenceAttemptAt && transaction.nextReferenceAttemptAt > now) {
+      if (
+        transaction.nextReferenceAttemptAt &&
+        transaction.nextReferenceAttemptAt > now
+      ) {
         return undefined;
       }
       const wallet = await store.findWalletForUpdate(transaction.walletId);
+      if (wallet) {
+        this.metrics?.recordWalletLockAcquisition();
+      }
       if (!wallet) {
         transaction.fail(FailureCode.InfrastructureFailure);
         const result = ProcessWagerTransaction.resultFrom(transaction);
