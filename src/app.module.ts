@@ -15,12 +15,15 @@ import {
   SqsWagerTransport,
 } from './infrastructure/messaging/sqs-wager-transport.js';
 import { SqsWagerLifecycle } from './infrastructure/messaging/sqs-wager-lifecycle.js';
+import { HealthController } from './health/health.controller.js';
+import { HealthService } from './health/health.service.js';
 
 @Module({
   imports: [MikroOrmModule.forRoot(mikroOrmConfig)],
-  controllers: [AppController, WageringController],
+  controllers: [AppController, WageringController, HealthController],
   providers: [
     AppService,
+    HealthService,
     MikroOrmWagerTransactionUnitOfWork,
     {
       provide: ProcessWagerTransaction,
