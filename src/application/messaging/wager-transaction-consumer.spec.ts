@@ -106,4 +106,38 @@ describe('WagerTransactionConsumer', () => {
     );
     expect(process.execute).not.toHaveBeenCalled();
   });
+
+  it('retries after a simulated crash between commit and ACK', async () => {
+    const ack = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('consumer crashed after commit'))
+      .mockResolvedValue(undefined);
+    const transport: WagerMessageTransport = {
+      ack,
+      retry: vi.fn(),
+      deadLetter: vi.fn(),
+    };
+    const process = {
+      execute: vi.fn().mockResolvedValue({
+        transactionId: 'transaction-1',
+        status: 'PROCESSED',
+        idempotentReplay: false,
+      }),
+    } as unknown as ProcessWagerTransaction;
+    const consumer = new WagerTransactionConsumer(
+      process,
+      transport,
+      'wager-consumer',
+      3,
+    );
+
+    await expect(consumer.handle(message, 1)).resolves.toMatchObject({
+      disposition: WagerMessageDisposition.Retry,
+    });
+    await expect(consumer.handle(message, 2)).resolves.toMatchObject({
+      disposition: WagerMessageDisposition.Ack,
+    });
+    expect(process.execute).toHaveBeenCalledTimes(2);
+    expect(transport.ack).toHaveBeenCalledTimes(2);
+  });
 });
